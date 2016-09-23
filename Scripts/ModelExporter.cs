@@ -1,10 +1,13 @@
 ﻿//Gong Xueyuan
 //2016/9/7
+using System;
 using System.IO;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 using UnityEditor;
-using UnityEngine.SceneManagement;
+using UnityEditor.SceneManagement;
+using System.Runtime.InteropServices;
 
 class MyModel
 {
@@ -82,8 +85,6 @@ public class ModelExporter : EditorWindow
         //ModelExporter window = GetWindowWithRect(typeof(ModelExporter), new Rect(0, 0, 800, 600), true, "WindowExportModels") as ModelExporter;
         window.Show();
 
-        findModels();
-        
         //cameraPrefab = Camera.main;
 
         //if(cameraPrefab != null)
@@ -92,10 +93,36 @@ public class ModelExporter : EditorWindow
         //    RT = new RenderTexture(640, 360, 24);
         //    cameraC.targetTexture = RT;
         //}
+
+        GameObject GO = GameObject.Find("heliu_DiMian");
+        Mesh mesh = GO.GetComponent<MeshFilter>().sharedMesh;
+        int[] triangles = mesh.triangles;
+        Vector3[] vertices = mesh.vertices;
+        Vector3[] normals = mesh.normals;
+
+        Debug.Log(triangles[0] + " " + triangles[1] + " " + triangles[2] + " " + triangles[3] + " " + triangles[4] + " " + triangles[5]);
+
+        for (int i = 0; i < vertices.Length; ++i)
+        {
+            vertices[i].x = vertices[i].x * GO.transform.lossyScale.x;
+            vertices[i].y = vertices[i].y * GO.transform.lossyScale.y;
+            vertices[i].z = vertices[i].z * GO.transform.lossyScale.z;
+        }
+
+        Debug.Log(vertices[0] + " " + vertices[1] + " " + vertices[2] + " " + vertices[3]);
+
+        for (int i = 0; i < normals.Length; ++i)
+        {
+
+        }
+
+        Debug.Log(normals[0] + " " + normals[1] + " " + normals[2] + " " + normals[3]);
     }
 
-    bool showPosition = true;
-    string status = "Select a GameObject";
+    void OnEnable()
+    {
+        findModels();
+    }
 
     Vector2 scrollPos;
     void OnGUI()
@@ -118,6 +145,35 @@ public class ModelExporter : EditorWindow
         }
     }
 
+    void OnDidOpenScene()
+    {
+        findModels();
+    }
+
+    void OnInspectorUpdate()
+    {
+        Repaint();
+    }
+
+    void OnDestroy()
+    {
+        for (int i = 0; i < myModels.Count; ++i)
+        {
+            if (myModels[i].MR != null)
+            {
+                myModels[i].MR.enabled = myModels[i].isEnabled;
+            }
+            if (myModels[i].SMR != null)
+            {
+                myModels[i].SMR.enabled = myModels[i].isEnabled;
+            }
+        }
+
+        //if(cameraC != null)
+        //{
+        //    DestroyImmediate(cameraC.gameObject);
+        //}
+    }
 
     bool tIs2Export;
     void drawToggleTree()
@@ -229,7 +285,7 @@ public class ModelExporter : EditorWindow
     static void output2File()
     {
         List<string> objNameList = new List<string>();
-        List<List<Vector3[]>> verticesLL = new List<List<Vector3[]>>();
+        List<List<MyModel>> myModelLL = new List<List<MyModel>>();
         int tLayer = int.MaxValue;
 
         for (int i = 0; i < myModels.Count; ++i)
@@ -247,19 +303,20 @@ public class ModelExporter : EditorWindow
             if (tLayer >= myModels[i].layer)
             {
                 objNameList.Add(myModels[i].objName);
-                verticesLL.Add(new List<Vector3[]>());
+                myModelLL.Add(new List<MyModel>());
                 tLayer = myModels[i].layer;
             }
 
             if(myModels[i].mesh != null)
             {
-                verticesLL[verticesLL.Count - 1].Add(myModels[i].mesh.vertices);
+                myModelLL[myModelLL.Count - 1].Add(myModels[i]);
             }
         }
 
-        for (int i = 0; i < verticesLL.Count; ++i)
+        for (int i = 0; i < myModelLL.Count; ++i)
         {
-            output2File(objNameList[i], verticesLL[i]);
+            output2File(objNameList[i], myModelLL[i]);
+            input4File(objNameList[i]); //TODO
         }
     }
 
@@ -284,76 +341,137 @@ public class ModelExporter : EditorWindow
         }
     }
 
-    void OnDidOpenScene()
+    [MenuItem("Assets/ExportSceneModel", false, 1500)]
+    static void exportScene()
     {
-        findModels();
-    }
+        string crtScene = SceneManager.GetActiveScene().path;
 
-    void OnInspectorUpdate()
-    {
-        Repaint();
-    }
-    
-    void OnDestroy()
-    {
-        for (int i = 0; i < myModels.Count; ++i)
+        UnityEngine.Object[] Os = Selection.GetFiltered(typeof(SceneAsset), SelectionMode.Assets);
+        SceneAsset SA;
+
+        List<MyModel> _myModels;
+        GameObject[] GOs;
+
+        for (int i = 0; i < Os.Length; ++i)
         {
-            if(myModels[i].MR != null)
+            SA = Os[i] as SceneAsset;
+            Debug.Log(AssetDatabase.GetAssetPath(SA));
+
+            EditorSceneManager.OpenScene(AssetDatabase.GetAssetPath(SA));
+
+            _myModels = new List<MyModel>();
+            GOs = FindObjectsOfType<GameObject>();
+
+            MeshFilter[] MFs;
+            MeshRenderer[] MRs;
+            SkinnedMeshRenderer[] SMRs;
+
+            for (int k = 0; k < GOs.Length; ++k)
             {
-                myModels[i].MR.enabled = myModels[i].isEnabled;
+                MFs = GOs[k].GetComponents<MeshFilter>();
+                MRs = GOs[k].GetComponents<MeshRenderer>();
+                SMRs = GOs[k].GetComponents<SkinnedMeshRenderer>();
+
+                for (int j = 0; j < MRs.Length; ++j)
+                {
+                    _myModels.Add(new MyModel(GOs[k].transform, MFs[j].sharedMesh, MRs[j], GOs[k].transform.name, GOs[k].layer, MRs[j].enabled));
+                }
+
+                for (int j = 0; j < SMRs.Length; ++j)
+                {
+                    _myModels.Add(new MyModel(GOs[k].transform, SMRs[j].sharedMesh, SMRs[j], GOs[k].transform.name, GOs[k].layer, SMRs[j].enabled));
+                }
             }
-            if(myModels[i].SMR != null)
+
+            if (_myModels.Count > 0)
             {
-                myModels[i].SMR.enabled = myModels[i].isEnabled;
+                output2File(SA.name, _myModels);
+                //input4File(SA.name); //TODO
             }
         }
 
-        //if(cameraC != null)
-        //{
-        //    DestroyImmediate(cameraC.gameObject);
-        //}
+        EditorSceneManager.OpenScene(crtScene);
     }
 
-    //[MenuItem("Gizmos/ModelHierarchyExporter", false, 30)]
-    //static void hierarchyExportModels()
-    //{
-    //    GameObject[] GOs = Selection.gameObjects;
+    public static byte[] Ints2Bytes(int[] aryInt)
+    {
+        int nLen = aryInt.Length;
+        if (nLen <= 0)
+        {
+            return null;
+        }
 
-    //    List<Vector3[]> verticesList = new List<Vector3[]>();
-    //    MeshFilter[] MFs;
-    //    SkinnedMeshRenderer[] SMRs;
-    //    for (int i = 0; i < GOs.Length; ++i)
-    //    {
-    //        MFs = GOs[i].GetComponentsInChildren<MeshFilter>();
-    //        SMRs = GOs[i].GetComponentsInChildren<SkinnedMeshRenderer>();
+        int nByteMulti = Marshal.SizeOf(aryInt[0]);
+        byte[] ary = new byte[nLen * nByteMulti];
 
-    //        Debug.Log("GameObject(" + GOs[i].name + ")");
+        for (int i = 0; i < nLen; i++)
+        {
+            byte[] tmp = BitConverter.GetBytes(aryInt[i]);
+            Buffer.BlockCopy(tmp, 0, ary, i * nByteMulti, nByteMulti);
+        }
+        return ary;
+    }
 
-    //        for (int j = 0; j < MFs.Length; ++j)
-    //        {
-    //            Debug.Log("Model(" + MFs[j].sharedMesh.name + ")");
-    //            Debug.Log(MFs[j].sharedMesh.vertexCount);
+    public static byte[] Vecs2Bytes(Vector3[] aryVec)
+    {
+        int nLen = aryVec.Length;
+        if (nLen <= 0)
+        {
+            return null;
+        }
 
-    //            verticesList.Add(MFs[j].sharedMesh.vertices);
-    //        }
+        int nByteMulti = Marshal.SizeOf(aryVec[0].x);
+        byte[] ary = new byte[nLen * nByteMulti * 3];
 
-    //        for (int j = 0; j < SMRs.Length; ++j)
-    //        {
-    //            Debug.Log("Model(" + SMRs[j].sharedMesh.name + ")");
-    //            Debug.Log(SMRs[j].sharedMesh.vertexCount);
+        for (int i = 0; i < nLen; i++)
+        {
+            byte[] tmpX = BitConverter.GetBytes(aryVec[i].x);
+            byte[] tmpY = BitConverter.GetBytes(aryVec[i].y);
+            byte[] tmpZ = BitConverter.GetBytes(aryVec[i].z);
 
-    //            verticesList.Add(SMRs[j].sharedMesh.vertices);
-    //        }
+            int nOffsetBase = i * nByteMulti * 3;
+            Buffer.BlockCopy(tmpX, 0, ary, nOffsetBase, nByteMulti);
+            Buffer.BlockCopy(tmpY, 0, ary, nOffsetBase + nByteMulti, nByteMulti);
+            Buffer.BlockCopy(tmpZ, 0, ary, nOffsetBase + nByteMulti * 2, nByteMulti);
+        }
+        return ary;
+    }
 
-    //        if (verticesList.Count > 0)
-    //        {
-    //            output2File(GOs[i].name, verticesList);
-    //            verticesList.Clear();
-    //        }
-    //    }
-    //}
+    public static byte[] Vec2Bytes(Vector3 vec)
+    {
+        int nByteMulti = Marshal.SizeOf(vec.x);
+        byte[] ary = new byte[Marshal.SizeOf(vec)];
 
-    static void output2File(string name, List<Vector3[]> verticesList)
+        byte[] tmpX = BitConverter.GetBytes(vec.x);
+        byte[] tmpY = BitConverter.GetBytes(vec.y);
+        byte[] tmpZ = BitConverter.GetBytes(vec.z);
+
+        Buffer.BlockCopy(tmpX, 0, ary, 0, nByteMulti);
+        Buffer.BlockCopy(tmpY, 0, ary, nByteMulti, nByteMulti);
+        Buffer.BlockCopy(tmpZ, 0, ary, nByteMulti * 2, nByteMulti);
+
+        return ary;
+    }
+
+    public static byte[] Quaternion2Bytes(Quaternion qua)
+    {
+        int nByteMulti = Marshal.SizeOf(qua.x);
+        byte[] ary = new byte[Marshal.SizeOf(qua)];
+
+        byte[] tmpX = BitConverter.GetBytes(qua.x);
+        byte[] tmpY = BitConverter.GetBytes(qua.y);
+        byte[] tmpZ = BitConverter.GetBytes(qua.z);
+        byte[] tmpW = BitConverter.GetBytes(qua.w);
+
+        Buffer.BlockCopy(tmpX, 0, ary, 0, nByteMulti);
+        Buffer.BlockCopy(tmpY, 0, ary, nByteMulti, nByteMulti);
+        Buffer.BlockCopy(tmpZ, 0, ary, nByteMulti * 2, nByteMulti);
+        Buffer.BlockCopy(tmpW, 0, ary, nByteMulti * 3, nByteMulti);
+
+        return ary;
+    }
+
+    public static string getFileAddr(string name, string postfix)
     {
         if (!Directory.Exists("ExportedModels"))
         {
@@ -361,27 +479,115 @@ public class ModelExporter : EditorWindow
         }
 
         string fileHead = "ExportedModels/" + name;
-        string fileAddr = fileHead + ".txt";
+        string fileAddr = fileHead + postfix;
 
         for (int i = 0; File.Exists(fileAddr); ++i)
         {
-            fileAddr = fileHead + "_" + i + ".txt";
+            fileAddr = fileHead + "_" + i + postfix;
         }
 
-        FileStream fs = new FileStream(fileAddr, FileMode.Create);
-        StreamWriter sw = new StreamWriter(fs);
+        return fileAddr;
+    }
 
-        for (int i = 0; i < verticesList.Count; ++i)
+    static void output2File(string name, List<MyModel> myModelList)
+    {
+        string fileAddr = getFileAddr(name, ".myM");
+
+        FileStream fs = new FileStream(fileAddr, FileMode.Create);
+
+        byte[] bytes;
+        int[] triangles;
+        Vector3[] vertices;
+        Vector3[] normals;
+        for (int i = 0; i < myModelList.Count; ++i)
         {
-            for (int j = 0; j < verticesList[i].Length; ++j)
+            bytes = Vec2Bytes(myModelList[i].transform.position);
+            fs.Write(bytes, 0, bytes.Length);
+            
+            bytes = Quaternion2Bytes(myModelList[i].transform.rotation);
+            fs.Write(bytes, 0, bytes.Length);
+
+            bytes = Vec2Bytes(myModelList[i].transform.lossyScale);
+            fs.Write(bytes, 0, bytes.Length);
+
+            triangles = myModelList[i].mesh.triangles;
+            bytes = BitConverter.GetBytes(triangles.Length);
+            fs.Write(bytes, 0, bytes.Length);
+            bytes = Ints2Bytes(triangles);
+            fs.Write(bytes, 0, bytes.Length);
+
+            vertices = myModelList[i].mesh.vertices;
+            bytes = BitConverter.GetBytes(vertices.Length);
+            fs.Write(bytes, 0, bytes.Length);
+            bytes = Vecs2Bytes(vertices);
+            fs.Write(bytes, 0, bytes.Length);
+
+            normals = myModelList[i].mesh.normals;
+            bytes = BitConverter.GetBytes(normals.Length);
+            fs.Write(bytes, 0, bytes.Length);
+            bytes = Vecs2Bytes(normals);
+            fs.Write(bytes, 0, bytes.Length);
+        }
+
+        fs.Flush();
+        fs.Close();
+    }
+
+    static List<MyModel> input4File(string name)
+    {
+        List<MyModel> myModelList = new List<MyModel>();
+        string fileAddr = "ExportedModels/" + name + ".myM";
+
+        FileStream fs = new FileStream(fileAddr, FileMode.Open);
+
+        int cnt;
+        int hasRead = 0;
+        int toRead = (int)fs.Length;
+        byte[] bytes = new byte[toRead];
+        while((cnt = fs.Read(bytes, hasRead, toRead)) > 0)
+        {
+            hasRead += cnt;
+            toRead -= cnt;
+        }
+
+        for (int index = 0; index < bytes.Length;)
+        {
+            Debug.Log(BitConverter.ToSingle(bytes, index) + " " + BitConverter.ToSingle(bytes, index + 4) + " " + BitConverter.ToSingle(bytes, index + 8));
+            Debug.Log(BitConverter.ToSingle(bytes, index + 12) + " " + BitConverter.ToSingle(bytes, index + 16) + " " + BitConverter.ToSingle(bytes, index + 20) + " " + BitConverter.ToSingle(bytes, index + 24));
+            Debug.Log(BitConverter.ToSingle(bytes, index + 28) + " " + BitConverter.ToSingle(bytes, index + 32) + " " + BitConverter.ToSingle(bytes, index + 36));
+
+            index += 40;
+            int triCnt = BitConverter.ToInt32(bytes, index);
+            Debug.Log("Triangles: " + triCnt);
+            index += 4;
+            for (int i = 0; i < triCnt; ++i)
             {
-                sw.WriteLine(verticesList[i][j].ToString());
+                Debug.Log(BitConverter.ToInt32(bytes, index));
+                index += 4;
+            }
+
+            int verCnt = BitConverter.ToInt32(bytes, index);
+            Debug.Log("Vertices: " + verCnt);
+            index += 4;
+            for (int i = 0; i < verCnt; ++i)
+            {
+                Debug.Log(BitConverter.ToSingle(bytes, index) + " " + BitConverter.ToSingle(bytes, index + 4) + " " + BitConverter.ToSingle(bytes, index + 8));
+                index += 12;
+            }
+
+            int norCnt = BitConverter.ToInt32(bytes, index);
+            Debug.Log("Normals: " + norCnt);
+            index += 4;
+            for (int i = 0; i < norCnt; ++i)
+            {
+                Debug.Log(BitConverter.ToSingle(bytes, index) + " " + BitConverter.ToSingle(bytes, index + 4) + " " + BitConverter.ToSingle(bytes, index + 8));
+                index += 12;
             }
         }
 
-        sw.Flush();
         fs.Flush();
-        sw.Close();
         fs.Close();
+
+        return myModelList;
     }
 }
